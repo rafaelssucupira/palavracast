@@ -1,4 +1,3 @@
-
 const TelegramBot           = require('node-telegram-bot-api');
 const { createWriteStream } = require("node:fs");
 const { appendFile }        = require('node:fs/promises');
@@ -6,62 +5,165 @@ const { join }              = require("node:path")
 const { spawn }             = require('child_process');
 
 const bot = new TelegramBot( process.env.BOT_TOKEM, { polling: true } );
-
 async function sendMedia(chatID, fileAudio)
     {
-        const date      = new Date();
-        const filename  = `${date.getFullYear()}${date.getMonth()}${date.getDay()}${date.getHours()}${date.getMinutes()}${date.getSeconds()}`
-        const options   = [
-            '-i', './input/base.mp4',
-            '-i', fileAudio,
-            '-c:v', 'copy', // Copiar o vídeo sem reencodificação
-            '-c:a', 'aac', // Codec de áudio
-            '-map', '0:v:0', // Mapear o vídeo do primeiro arquivo de entrada
-            '-map', '1:a:0', // Mapear o áudio do segundo arquivo de entrada
-            '-shortest', // Duração do vídeo igual ao áudio
-            `./output/${filename}.mp4`
-        ];
+        const date     = new Date();
+        const filename = `${date.getFullYear()}${date.getMonth()}${date.getDay()}${date.getHours()}${date.getMinutes()}${date.getSeconds()}`
+        // const options = [
+        //     '-loop', '1',               // Faz a imagem se repetir (loop)
+        //     '-i', './input/base.jpg',   // Imagem de entrada
+        //     '-i', fileAudio,            // Áudio de entrada
+        //     '-vf', 'scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,format=yuv420p',
+        //                                 // Redimensiona para 1080x1920, mantendo a proporção, e preenche as áreas vazias
+        //     '-c:v', 'libx264',          // Codec de vídeo
+        //     '-c:a', 'aac',              // Codec de áudio
+        //     '-b:a', '128k',             // Taxa de bits do áudio
+        //     '-pix_fmt', 'yuv420p',      // Formato de pixel para compatibilidade
+        //     '-shortest',                // Faz o vídeo ter a mesma duração do áudio
+        //     `./output/${filename}.mp4`  // Arquivo de saída
+        // ];
+
+const options = [
+    '-loop', '1',
+    '-i', './input/base.jpg',
+    '-i', fileAudio,
+    '-stream_loop', '-1',           // Loop INFINITO do vídeo da senoide
+    '-i', './input/voice-memo.gif', // Seu vídeo de 1 segundo
+    '-filter_complex',
+    '[0:v]scale=1080:1920:force_original_aspect_ratio=decrease,' +
+    'pad=1080:1920:(ow-iw)/2:(oh-ih)/2[bg];' +
+    '[2:v]scale=800:-1[wave];' +    // Apenas redimensiona
+    '[bg][wave]overlay=W/2-w/2:H-h-1[v]',
+    '-map', '[v]',
+    '-map', '1:a',
+    '-c:v', 'libx264',
+    '-c:a', 'aac',
+    '-b:a', '128k',
+    '-pix_fmt', 'yuv420p',
+    '-shortest',                    // Termina quando o áudio acabar
+    `./output/${filename}.mp4`
+];
+
+// const options = [
+//     '-loop', '1',
+//     '-i', './input/base.jpg',
+//     '-i', fileAudio,
+//     '-stream_loop', '-1',
+//     '-i', './input/spectrum2.mp4',
+//     '-filter_complex',
+//     '[0:v]scale=1080:1920:force_original_aspect_ratio=decrease,' +
+//     'pad=1080:1920:(ow-iw)/2:(oh-ih)/2[bg];' +
+
+//     '[2:v]scale=800:-1[wave_main];' +
+
+//     // Cria reflexo
+//     '[wave_main]split[wave_top][wave_bottom];' +
+//     '[wave_bottom]vflip,' +
+//     'colorchannelmixer=aa=0.3,' + // 30% de opacidade
+//     'crop=800:50:0:0[wave_reflection];' +
+
+//     // Combina onda + reflexo
+//     '[wave_top][wave_reflection]vstack=inputs=2[wave_with_reflection];' +
+
+//     // Aplica ao fundo
+//     '[bg][wave_with_reflection]overlay=W/2-w/2:H-h-150[v]',
+
+//     '-map', '[v]',
+//     '-map', '1:a',
+//     '-c:v', 'libx264',
+//     '-c:a', 'aac',
+//     '-b:a', '128k',
+//     '-pix_fmt', 'yuv420p',
+//     '-shortest',
+//     `./output/${filename}.mp4`
+// ];
 
         const listener = spawn( "ffmpeg", options )
-
         listener.stderr.on( "data", (data) => {
             appendFile("logFfmpeg.txt", `${data.toString()}\n`)
-        } )
-
+        })
         listener.on( "close", async () => {
             await bot.sendVideo( chatID, `./output/${filename}.mp4`)
         })
     }
 
-
-
 bot.on('message', async (msg) => {
 
-    const fileID = msg.voice?.file_id
-    const chatID = msg.chat.id
+    if(msg.voice)
+        {
+            const fileID = msg.voice?.file_id
+            const chatID = msg.chat.id
 
-    if( !msg.voice ) {
-        bot.sendMessage( chatID, "Processamos apenas audio! 😁" )
-        return
-    }
+            await bot.sendAnimation(chatID, "./input/lina-poe-lalafell.gif")
 
+            const fileStream    = bot.getFileStream( fileID );
+            const filePath      = join(__dirname, 'input', 'voices', `${fileID}.ogg`);
 
-    await bot.sendAnimation(chatID, "./input/lina-poe-lalafell.gif")
+            fileStream
+                .pipe(createWriteStream( filePath ))
+                .on('finish',   async () => await sendMedia(chatID, filePath) )
+                .on('error',    async (err) => {
+                    console.error(`Erro ao baixar o arquivo: ${err}`);
+                    await bot.sendMessage(chatID, "problema no donwload, contate o suporte!");
+                });
 
-    const fileStream    = bot.getFileStream( fileID );
-    const filePath      = join(__dirname, 'input', 'voices', `${fileID}.ogg`);
-    const writeStream   = createWriteStream( filePath );
+        }
+    else if(msg.document && msg.document?.mime_type.includes("image") === true)
+        {
 
-    fileStream
-        .pipe(writeStream);
+            // 0 = width : 90 height : 30
+            // 1 = width : 320 height : 105
+            // 2 = width : 800 height : 262
+            // 3 = width : 1280 height : 420
 
-    writeStream.on('finish', async () => await sendMedia(chatID, filePath) );
+            const fileID    = msg.document["file_id"];
+            const mimeType  = msg.document.mime_type.split("/")[1];
+            const chatID    = msg.chat.id;
+            const fileStream  = bot.getFileStream( fileID );
+            const filePath    = join(__dirname, 'input', `base.jpg`);
 
-    writeStream.on('error', async (err) => {
+            fileStream
+                .pipe(createWriteStream( filePath ))
+                .on('finish',   async () => await bot.sendMessage( chatID, "Imagem salva, agora envie o audio! 😁" ) )
+                .on('error',    async (err) => {
+                    console.error(`Erro ao baixar o arquivo: ${err}`);
+                    await bot.sendMessage(chatID, "problema no donwload, contate o suporte!");
+                });
 
-        console.error(`Erro ao baixar o arquivo: ${err}`);
-        await bot.sendMessage(chatID, "problema no donwload, contate o suporte!");
-    });
+        }
+    else
+        {
+            await bot.sendMessage( msg.chat.id, "Envie uma mensagem de voz ou uma imagem para processar! 😁" )
+            return
+        }
+
 
 });
 
+//       const options = [
+//     '-loop', '1',               // Faz a imagem se repetir (loop)
+//     '-i', './input/base.jpg',  // Imagem de entrada
+//     '-i', fileAudio,            // Áudio de entrada
+//     '-vf', 'scale=1600:900',    // Redimensiona para 1600x900 (altura ajustada para ser divisível por 2)
+//     '-c:v', 'libx264',          // Codec de vídeo
+//     '-t', '3.5',                // Define a duração do vídeo (igual à duração do áudio)
+//     '-c:a', 'aac',              // Codec de áudio
+//     '-b:a', '128k',             // Taxa de bits do áudio
+//     '-pix_fmt', 'yuv420p',      // Formato de pixel para compatibilidade
+//     '-shortest',                // Faz o vídeo ter a mesma duração do áudio
+//     `./output/${filename}.mp4`  // Arquivo de saída
+// ];
+
+// const options = [
+//     '-loop', '1',               // Faz a imagem se repetir (loop)
+//     '-i', './input/base.jpg',  // Imagem de entrada
+//     '-i', fileAudio,            // Áudio de entrada
+//     '-vf', 'scale=1600:900',    // Redimensiona para 1600x900 (altura ajustada para ser divisível por 2)
+//     '-c:v', 'libx264',          // Codec de vídeo
+//     '-t', '3.5',                // Define a duração do vídeo (igual à duração do áudio)
+//     '-c:a', 'aac',              // Codec de áudio
+//     '-b:a', '128k',             // Taxa de bits do áudio
+//     '-pix_fmt', 'yuv420p',      // Formato de pixel para compatibilidade
+//     '-shortest',                // Faz o vídeo ter a mesma duração do áudio
+//     `./output/${filename}.mp4`  // Arquivo de saída
+// ];
