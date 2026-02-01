@@ -10,6 +10,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "daily-bread": "^1.5.2",
     "ffmpeg": "^0.0.4",
     "node-telegram-bot-api": "^0.66.0"
   }

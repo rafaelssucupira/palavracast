@@ -3,80 +3,34 @@ const { createWriteStream } = require("node:fs");
 const { appendFile }        = require('node:fs/promises');
 const { join }              = require("node:path")
 const { spawn }             = require('child_process');
+const { DailyBread }        = require("daily-bread");
+
 
 const bot = new TelegramBot( process.env.BOT_TOKEM, { polling: true } );
 async function sendMedia(chatID, fileAudio)
     {
         const date     = new Date();
         const filename = `${date.getFullYear()}${date.getMonth()}${date.getDay()}${date.getHours()}${date.getMinutes()}${date.getSeconds()}`
-        // const options = [
-        //     '-loop', '1',               // Faz a imagem se repetir (loop)
-        //     '-i', './input/base.jpg',   // Imagem de entrada
-        //     '-i', fileAudio,            // Áudio de entrada
-        //     '-vf', 'scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,format=yuv420p',
-        //                                 // Redimensiona para 1080x1920, mantendo a proporção, e preenche as áreas vazias
-        //     '-c:v', 'libx264',          // Codec de vídeo
-        //     '-c:a', 'aac',              // Codec de áudio
-        //     '-b:a', '128k',             // Taxa de bits do áudio
-        //     '-pix_fmt', 'yuv420p',      // Formato de pixel para compatibilidade
-        //     '-shortest',                // Faz o vídeo ter a mesma duração do áudio
-        //     `./output/${filename}.mp4`  // Arquivo de saída
-        // ];
-
-const options = [
-    '-loop', '1',
-    '-i', './input/base.jpg',
-    '-i', fileAudio,
-    '-stream_loop', '-1',           // Loop INFINITO do vídeo da senoide
-    '-i', './input/voice-memo.gif', // Seu vídeo de 1 segundo
-    '-filter_complex',
-    '[0:v]scale=1080:1920:force_original_aspect_ratio=decrease,' +
-    'pad=1080:1920:(ow-iw)/2:(oh-ih)/2[bg];' +
-    '[2:v]scale=800:-1[wave];' +    // Apenas redimensiona
-    '[bg][wave]overlay=W/2-w/2:H-h-1[v]',
-    '-map', '[v]',
-    '-map', '1:a',
-    '-c:v', 'libx264',
-    '-c:a', 'aac',
-    '-b:a', '128k',
-    '-pix_fmt', 'yuv420p',
-    '-shortest',                    // Termina quando o áudio acabar
-    `./output/${filename}.mp4`
-];
-
-// const options = [
-//     '-loop', '1',
-//     '-i', './input/base.jpg',
-//     '-i', fileAudio,
-//     '-stream_loop', '-1',
-//     '-i', './input/spectrum2.mp4',
-//     '-filter_complex',
-//     '[0:v]scale=1080:1920:force_original_aspect_ratio=decrease,' +
-//     'pad=1080:1920:(ow-iw)/2:(oh-ih)/2[bg];' +
-
-//     '[2:v]scale=800:-1[wave_main];' +
-
-//     // Cria reflexo
-//     '[wave_main]split[wave_top][wave_bottom];' +
-//     '[wave_bottom]vflip,' +
-//     'colorchannelmixer=aa=0.3,' + // 30% de opacidade
-//     'crop=800:50:0:0[wave_reflection];' +
-
-//     // Combina onda + reflexo
-//     '[wave_top][wave_reflection]vstack=inputs=2[wave_with_reflection];' +
-
-//     // Aplica ao fundo
-//     '[bg][wave_with_reflection]overlay=W/2-w/2:H-h-150[v]',
-
-//     '-map', '[v]',
-//     '-map', '1:a',
-//     '-c:v', 'libx264',
-//     '-c:a', 'aac',
-//     '-b:a', '128k',
-//     '-pix_fmt', 'yuv420p',
-//     '-shortest',
-//     `./output/${filename}.mp4`
-// ];
+        const options = [
+            '-loop', '1',
+            '-i', './input/base.jpg',
+            '-i', fileAudio,
+            '-stream_loop', '-1',           // Loop INFINITO do vídeo da senoide
+            '-i', './input/voice-memo.gif', // Seu vídeo de 1 segundo
+            '-filter_complex',
+            '[0:v]scale=1080:1920:force_original_aspect_ratio=decrease,' +
+            'pad=1080:1920:(ow-iw)/2:(oh-ih)/2[bg];' +
+            '[2:v]scale=800:-1[wave];' +    // Apenas redimensiona
+            '[bg][wave]overlay=W/2-w/2:H-h-1[v]',
+            '-map', '[v]',
+            '-map', '1:a',
+            '-c:v', 'libx264',
+            '-c:a', 'aac',
+            '-b:a', '128k',
+            '-pix_fmt', 'yuv420p',
+            '-shortest',                    // Termina quando o áudio acabar
+            `./output/${filename}.mp4`
+        ];
 
         const listener = spawn( "ffmpeg", options )
         listener.stderr.on( "data", (data) => {
@@ -88,8 +42,20 @@ const options = [
     }
 
 bot.on('message', async (msg) => {
+    console.log(msg);
 
-    if(msg.voice)
+
+    if(msg.text && msg.chat.id === 466573943)
+        {
+            const bible = new DailyBread();
+            bible.setVersion( "NVI-PT" );
+            const { reference, text } = await bible.votd()
+
+            const txtFormatted = `*🍞 Pão Diário*\n\n${text}\n\n*${reference}*`
+            await bot.sendMessage( msg.chat.id, txtFormatted )
+
+        }
+    else if(msg.voice)
         {
             const fileID = msg.voice?.file_id
             const chatID = msg.chat.id
@@ -133,6 +99,7 @@ bot.on('message', async (msg) => {
         }
     else
         {
+
             await bot.sendMessage( msg.chat.id, "Envie uma mensagem de voz ou uma imagem para processar! 😁" )
             return
         }
